@@ -1,0 +1,37 @@
+
+//Deposit DB
+id_deposits		int(11)			
+users_id		int(11)	
+order_id		varchar(150)	
+type			varchar(150)
+amount			varchar(150)	
+admin_fee		varchar(150)	
+gross_amount		varchar(100)	
+payment_type		varchar(150)
+transaction_time	datetime	
+transaction_time_to	datetime
+transaction_status	enum('paid', 'unpaid', 'cancel', 'expired', 'deny'...)	
+bank			varchar(100)	
+va_numbers		varchar(50)	
+biller_code		varchar(50)	
+bill_key		varchar(50)
+payment_code		varchar(100)
+no_rekening		varchar(150)
+atas_nama		varchar(150)	
+store			varchar(100)
+model			varchar(100)
+url			text	
+
+//History Saldo
+
+id_HistorySaldoPrimary		int(11)		
+no_reff				varchar(150)	
+no_invoice			varchar(150)	
+tanggal				datetime
+users_id			varchar(20)	
+jenis				enum('1', '2')	
+amount				int(11)		
+dari_ke				varchar(20)	
+keterangan			varchar(500)	
+saldo_awal			varchar(50)	
+saldo_akhir			varchar(50)
