@@ -1,0 +1,81 @@
+public function bank_transfer()
+    {
+        cek_session_members();
+        $id = $this->session->userdata('users_id');
+        $amount = $this->input->post('amount');
+        $exp = str_replace('Rp ', '', $amount);
+        $replaceRp = str_replace('.', '', $exp);
+        $kode = rand(100, 999);
+        //$kode = '772';
+        $gross_amount = $kode + $replaceRp;
+        $timenow = date('Y-m-d H:i:s');
+        $isdate = strtotime($timenow);
+        $jam24 = $isdate + (60 * 60 * 24);
+        $dateTo = date('Y-m-d H:i:s', $jam24);
+        $bank = $this->input->post('bank');
+        $order_id = rand();
+        $users = $this->db->get_where('users', array('users_id' => $id))->row_array();
+        $service = $this->db->query("SELECT * FROM service_bank WHERE service_code ='$bank' AND is_actived ='1' ORDER BY id_service ASC")->row_array();
+
+        $cekamount = $this->db->query("SELECT * FROM deposits WHERE transaction_status ='unpaid' AND type='manual' ORDER BY id_deposits ASC LIMIT 1")->row_array();
+
+        $paymet_service_bank = $this->model_app->view_where('payment_service', array('payment_method' => 'bank_transfer'))->row_array();
+
+        $min_saldo = $paymet_service_bank['min_payment'];
+        $max_saldo = $paymet_service_bank['max_payment'];
+        if ($replaceRp) {
+            if ($replaceRp < $min_saldo) {
+                $this->session->set_flashdata('min_topup', 'Rp '.rupiah($min_saldo));
+                redirect('topup');
+            } elseif($replaceRp > $max_saldo){
+                 $this->session->set_flashdata('max_topup', 'Rp '.rupiah($max_saldo));
+                redirect('topup');
+            } else {
+                if ($cekamount == NULL) {
+                    if ($cekamount['gross_amount'] != $gross_amount) {
+                        $data = array(
+                            'users_id' => $id,
+                            'order_id' => 'REQ - ' . $order_id,
+                            'type' => 'manual',
+                            'amount' => $replaceRp,
+                            'admin_fee' => $kode,
+                            'gross_amount' => $gross_amount,
+                            'payment_type' => 'bank_transfer',
+                            'transaction_time' => $timenow,
+                            'transaction_time_to' => $dateTo,
+                            'transaction_status' => 'unpaid',
+                            'bank' =>  $bank,
+                            'va_numbers' => '-',
+                            'biller_code' => '-',
+                            'bill_key' => '-',
+                            'payment_code' => '-',
+                            'no_rekening' => $service['account_number'],
+                            'atas_nama' => $service['account_name'],
+                            'store' => '-',
+                            'model' => '-',
+                            'url' => '-'
+                        );
+
+                        $this->db->insert('deposits', $data);
+                        $data_saldo = array(
+                            'users_id' => $id,
+                            'ref' => $order_id,
+                            'amount' => $replaceRp,
+                            'gross_amount' => $gross_amount,
+                            'type' => '1',
+                            'status' => 'unpaid',
+                            'deskripsi' => 'TopUp Saldo Iwopay',
+                            'create_at' => $timenow
+                        );
+                        $this->db->insert('saldo_members', $data_saldo);
+                        redirect('topup');
+                    } else {
+                        $this->session->set_flashdata('pesan', '<div class="alert alert-danger" role="alert"><div class="alert-text">Ups! Kode Unik sudah Terpakai, silahkan coba lagi!</div></div>');
+                        redirect('deposit');
+                    }
+                } else {
+                    redirect('topup');
+                }
+            }
+        }
+    }
