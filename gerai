@@ -1,0 +1,157 @@
+public function change_gerai()
+    {
+        cek_session_members();
+        $id = $this->session->userdata('users_id');
+        $users = $this->db->get_where('users', array('users_id' => $id))->row_array();
+        $alamatBiliing = $this->model_app->view_alamat_billing($id)->row_array();
+        $alamat_lengkap = $alamatBiliing['alamat'] . ', ' . ucwords(strtolower($alamatBiliing['kelurahan'])) . ',' . ucwords(strtolower($alamatBiliing['kecamatan']));
+        $jml_topup = $this->input->post('jml_topup');
+        $exp = str_replace('Rp ', '', $jml_topup);
+        $replaceRp = str_replace('.', '', $exp);
+        $paymet_service_bank = $this->model_app->view_where('payment_service', array('payment_method' => 'gerai'))->row_array();
+        $min_saldo = $paymet_service_bank['min_payment'];
+        $max_saldo = $paymet_service_bank['max_payment'];
+        if ($replaceRp) {
+            if ($replaceRp < $min_saldo) {
+                $this->session->set_flashdata('min_topup', 'Rp '.rupiah($min_saldo));
+                redirect('topup');
+            } elseif($replaceRp > $max_saldo){
+                 $this->session->set_flashdata('max_topup', 'Rp '.rupiah($max_saldo));
+                redirect('topup');
+            } else {
+
+                $server_key = 'SB-Mid-server-OG-4BWExwH9ojPpyHHeH4n3L';
+                $gross_amount = $this->input->post('gross_amount');
+                $payment_type = $this->input->post('payment_type');
+                $admin_fee = $this->input->post('fee_admin');
+                $store = $this->input->post('store');
+                $transaction_details = array(
+                    'order_id' => mt_rand() . time(),
+                    'gross_amount' => $gross_amount, // no decimal allowed for creditcard
+                );
+
+                $items = array(
+                    array(
+                        'id'       => 'item1',
+                        'price'    => $gross_amount,
+                        'quantity' => 1,
+                        'name'     => 'Topup'
+                    )
+                );
+                $billing_address = array(
+                    'first_name'   => $users['nama_lengkap'],
+                    'address'      => $alamat_lengkap,
+                    'city'         => ucwords(strtolower($alamatBiliing['kota'])),
+                    'postal_code'  => $alamatBiliing['kode_pos'],
+                    'phone'        => $users['nomor_hp'],
+                    'country_code' => 'IDN'
+                );
+                $shipping_address = array(
+                    'first_name'   => $users['nama_lengkap'],
+                    'address'      => $alamat_lengkap,
+                    'city'         => ucwords(strtolower($alamatBiliing['kota'])),
+                    'postal_code'  => $alamatBiliing['kode_pos'],
+                    'phone'        => $users['nomor_hp'],
+                    'country_code' => 'IDN'
+                );
+                $customer_details = array(
+                    'first_name'       => $users['nama_lengkap'],
+                    'email'            => $users['email'],
+                    'phone'            => $users['nomor_hp'],
+                    'billing_address'  => $billing_address,
+                    'shipping_address' => $shipping_address
+                );
+                //$token_id = $this->input->post('token_id');
+                $cstore = array(
+                    'store' => $store,
+                    'alfamart_free_text_1' => "1st row of receipt,",
+                    'alfamart_free_text_2' => "This is the 2nd row,",
+                    'alfamart_free_text_3' => "3rd row. The end."
+                    //'authentication' => true
+                    //'save_token_id' => isset($_POST['save_cc'])
+                );
+                $data_hash = array(
+                    'payment_type' => $payment_type,
+                    'transaction_details' => $transaction_details,
+                    'item_details'        => $items,
+                    'customer_details'    => $customer_details,
+                    'cstore' => $cstore
+                );
+                $body = json_encode($data_hash);
+                $ch = curl_init();
+
+                curl_setopt($ch, CURLOPT_URL, 'https://api.sandbox.midtrans.com/v2/charge');
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+                curl_setopt($ch, CURLOPT_POST, 1);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+
+                $headers = array();
+                $headers[] = 'Accept: application/json';
+                $headers[] = 'Authorization: Basic ' . base64_encode($server_key . ':');
+                $headers[] = 'Content-Type: application/json';
+                curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+                $result = curl_exec($ch);
+                if (curl_errno($ch)) {
+                    echo 'Error:' . curl_error($ch);
+                }
+                curl_close($ch);
+                $res = json_decode($result, true);
+                print_r($res);
+
+                if ($res['transaction_status'] == 'settlement') {
+                    $trx_status = 'paid';
+                } elseif ($res['transaction_status'] == 'pending') {
+                    $trx_status = 'unpaid';
+                } elseif ($res['transaction_status'] == 'cancel') {
+                    $trx_status = 'cancel';
+                } elseif ($res['transaction_status'] == 'expire') {
+                    $trx_status = 'expired';
+                } elseif ($res['transaction_status'] == 'deny') {
+                    $trx_status = 'deny';
+                }
+
+                $isdate = strtotime($res['transaction_time']);
+                $jam24 = $isdate + (60 * 60 * 24);
+                $dateTo = date('Y-m-d H:i:s', $jam24);
+                $data_payment = array(
+                    'users_id' => $users['users_id'],
+                    'order_id' => $res['order_id'],
+                    'type' => 'otomatis',
+                    'amount' => $replaceRp,
+                    'admin_fee' => $admin_fee,
+                    'gross_amount' => $gross_amount,
+                    'payment_type' => $res['payment_type'],
+                    'transaction_time' => $res['transaction_time'],
+                    'transaction_time_to' => $dateTo,
+                    'transaction_status' => $trx_status,
+                    'bank' => '-',
+                    'va_numbers' => '-',
+                    'biller_code' => '-',
+                    'bill_key' => '-',
+                    'payment_code' => $res['payment_code'],
+                    'no_rekening' => '-',
+                    'atas_nama' => '-',
+                    'store' => $res['store'],
+                    'model' => '-',
+                    'url' => '-'
+                );
+                $this->db->insert('deposits', $data_payment);
+                $data_saldo = array(
+                    'users_id' => $id,
+                    'ref' => $res['order_id'],
+                    'amount' => $replaceRp,
+                    'gross_amount' => $gross_amount,
+                    'type' => '1',
+                    'status' => $trx_status,
+                    'deskripsi' => 'TopUp Saldo Iwopay',
+                    'create_at' => $res['transaction_time']
+                );
+                $this->db->insert('saldo_members', $data_saldo);
+                redirect('topup');
+            }
+        } else {
+            $this->session->set_flashdata('pesan', '<div class="alert alert-danger" role="alert"><div class="alert-text">Ups! Jumlah Topup tidak boleh kosong!..</div></div>');
+            redirect('topup');
+        }
+    }
